@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>負債與現金流雷達</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // 強制啟用 Tailwind 類別型深色模式
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; transition: background-color 0.3s ease, color 0.3s ease; }
+    /* 淺色模式背景網格 */
+    .bg-mesh-light { background-image: radial-gradient(at 0% 0%, hsla(350,100%,94%,1) 0, transparent 50%), radial-gradient(at 100% 100%, hsla(28,100%,94%,1) 0, transparent 50%); }
+    /* 深色模式背景網格 (極微弱) */
+    .dark .bg-mesh-dark { background-image: radial-gradient(at 0% 0%, rgba(225, 29, 72, 0.03) 0, transparent 50%), radial-gradient(at 100% 100%, rgba(249, 115, 22, 0.03) 0, transparent 50%); }
+    
+    #loader { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; backdrop-filter: blur(8px); }
+    .spinner { border: 4px solid rgba(100, 116, 139, 0.2); border-left-color: #e11d48; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite; margin-bottom: 16px; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#020617] bg-mesh-light dark:bg-mesh-dark min-h-screen text-slate-900 dark:text-slate-100 transition-colors duration-300">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const App = () => {
+      // 主題持久化邏輯
+      const [theme, setTheme] = useState(() => {
+        return localStorage.getItem('radar_theme') || 'dark';
+      });
+
+      useEffect(() => {
+        const root = document.documentElement;
+        if (theme === 'dark') {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+        localStorage.setItem('radar_theme', theme);
+      }, [theme]);
+
+      const toggleTheme = () => {
+        setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+      };
+
+      const [records, setRecords] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const [showModal, setShowModal] = useState(false);
+      const [isSaving, setIsSaving] = useState(false);
+      const [formData, setFormData] = useState({
+        id: '', name: '', partnerBank: '', deductBank: '', rate: '',
+        fee: '', totalAmount: '', monthlyPay: '', endDate: '', status: '還款中', note: ''
+      });
+
+      const fetchData = () => {
+        setIsLoading(true);
+        if (typeof google !== 'undefined') {
+          google.script.run.withSuccessHandler(data => {
+            setRecords(data || []);
+            setIsLoading(false);
+          }).withFailureHandler(err => {
+            alert('讀取資料失敗: ' + err.message);
+            setIsLoading(false);
+          }).getLoanRecords();
+        } else {
+          // GitHub / 本機防禦性降級邏輯：啟動 Mock Data
+          console.warn('⚠️ 偵測到非 GAS 封閉環境，啟動本機虛擬數據防護機制以防 UI 崩潰。');
+          setTimeout(() => {
+            setRecords([
+              { id: '1', name: '虛擬車貸 (Demo)', partnerBank: '台新', deductBank: '第一', rate: 0.03, monthlyPay: 12000, endDate: '2030-09', status: '還款中', note: '測試數據' },
+              { id: '2', name: '虛擬房貸 (Demo)', partnerBank: '富邦', deductBank: '富邦', rate: 0.022, monthlyPay: 27000, endDate: '2054-04', status: '還款中', note: '測試數據' }
+            ]);
+            setIsLoading(false);
+          }, 800);
+        }
+      };
+
+      useEffect(() => { fetchData(); }, []);
+
+      const activeLoans = records.filter(r => r.status === '還款中');
+      const closedLoans = records.filter(r => r.status === '已結清');
+      
+      const totalMonthlyOutflow = useMemo(() => {
+        return activeLoans.reduce((sum, item) => sum + (Number(item.monthlyPay) || 0), 0);
+      }, [activeLoans]);
+
+      const openModal = (item = null) => {
+        if (item) setFormData({ ...item });
+        else setFormData({ id: '', name: '', partnerBank: '', deductBank: '', rate: '', fee: '', totalAmount: '', monthlyPay: '', endDate: '', status: '還款中', note: '' });
+        setShowModal(true);
+      };
+
+      const handleSave = () => {
+        if (!formData.name || !formData.monthlyPay) return alert('項目名稱與每月還款為必填！');
+        setIsSaving(true);
+        if (typeof google !== 'undefined') {
+          google.script.run
+            .withSuccessHandler(() => { setShowModal(false); setIsSaving(false); fetchData(); })
+            .withFailureHandler((err) => { alert('寫入失敗：' + err.message); setIsSaving(false); })
+            .saveLoanRecord(formData);
+        } else {
+          alert('本機環境無法寫入 Google Sheets');
+          setShowModal(false);
+          setIsSaving(false);
+        }
+      };
+
+      const handleDelete = (id, e) => {
+        e.stopPropagation();
+        if (!confirm('確定要從資料庫中刪除此筆紀錄嗎？')) return;
+        setIsLoading(true);
+        if (typeof google !== 'undefined') {
+          google.script.run
+            .withSuccessHandler(() => fetchData())
+            .withFailureHandler(err => { alert('刪除失敗：' + err.message); fetchData(); })
+            .deleteLoanRecord(id);
+        } else {
+          alert('本機環境無法執行刪除');
+          setIsLoading(false);
+        }
+      };
+
+      const calcRemainingMonths = (endDateStr) => {
+        if (!endDateStr || typeof endDateStr !== 'string') return '無設定';
+        const parts = endDateStr.split('-');
+        if (parts.length < 2) return '格式錯誤';
+        const year = parseInt(parts[0], 10), month = parseInt(parts[1], 10);
+        if (isNaN(year) || isNaN(month)) return '格式錯誤';
+        const end = new Date(year, month - 1), now = new Date();
+        const diffMonths = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth());
+        return diffMonths > 0 ? `${diffMonths} 個月` : '已到期';
+      };
+
+      if (isLoading && records.length === 0) {
+        return <div id="loader" className="bg-white/80 dark:bg-slate-950/80 text-rose-600 dark:text-rose-500"><div className="spinner"></div><div className="animate-pulse tracking-widest text-sm uppercase">📡 雷達連線與矩陣掃描中...</div></div>;
+      }
+
+      return (
+        <div className="p-4 md:p-8 max-w-6xl mx-auto pb-24">
+          <div className="border-b border-slate-200 dark:border-slate-800 pb-6 mb-8 mt-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 relative">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-rose-400 dark:bg-rose-900 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-3xl opacity-20 animate-pulse pointer-events-none"></div>
+            <div className="z-10 w-full flex justify-between md:justify-start items-center gap-4">
+              <div>
+                <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-600 via-pink-500 to-orange-500 dark:from-rose-400 dark:via-pink-400 dark:to-orange-400 tracking-wider drop-shadow-sm">
+                  負債與現金流雷達
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 mt-2 font-bold tracking-widest text-sm uppercase">Debt & Cashflow Radar</p>
+              </div>
+              
+              {/* 主題切換器 */}
+              <button onClick={toggleTheme} className="ml-auto p-3 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-yellow-400 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors shadow-inner" title="切換深淺色模式">
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
+            </div>
+            
+            <button onClick={() => openModal()} className="z-10 w-full md:w-auto bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-500 hover:to-orange-400 text-white font-bold py-3 px-6 rounded-xl shadow-[0_8px_20px_rgba(225,29,72,0.3)] hover:shadow-[0_8px_25px_rgba(225,29,72,0.4)] hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 border border-rose-400/50">
+              ➕ 新增債務紀錄
+            </button>
+          </div>
+
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-white dark:border-slate-800 shadow-[0_20px_50px_rgba(225,29,72,0.06)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-8 rounded-3xl mb-10 flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden transition-colors duration-300">
+            <div className="z-10">
+              <h2 className="text-rose-600 dark:text-rose-400 font-bold tracking-widest uppercase mb-3 flex items-center gap-2">
+                <span className="animate-pulse text-xl">🔴</span> 系統每月基礎失血量
+              </h2>
+              <div className="text-5xl md:text-7xl font-black text-slate-800 dark:text-white drop-shadow-sm transition-colors">$ {totalMonthlyOutflow.toLocaleString()}</div>
+              <p className="text-slate-500 dark:text-slate-400 mt-3 text-sm font-medium">維持生命跡象所需之最低現金流（不含生活費與 DCA）</p>
+            </div>
+            <div className="z-10 text-right border-l-2 border-slate-200 dark:border-slate-800 pl-8 w-full md:w-auto">
+               <div className="text-slate-500 dark:text-slate-400 mb-1 text-sm font-bold uppercase tracking-widest">Active Loans</div>
+               <div className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-b from-slate-700 to-slate-400 dark:from-white dark:to-slate-500">{activeLoans.length} <span className="text-lg">筆</span></div>
+            </div>
+          </div>
+
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-300 mb-6 flex items-center gap-3">
+             <div className="w-2 h-6 bg-gradient-to-b from-rose-500 to-orange-500 rounded-full"></div>
+             執行中貸款 (Active)
+          </h3>
+          
+          {activeLoans.length === 0 ? (
+             <div className="text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center font-bold tracking-widest">目前無執行中貸款紀錄。</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+              {activeLoans.map(item => {
+                const rateNum = Number(item.rate) || 0;
+                const isHighRate = rateNum > 0.025; 
+                
+                return (
+                  <div key={item.id} onClick={() => openModal(item)} className={`relative p-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-1.5 
+                    ${isHighRate 
+                      ? 'border-2 border-orange-300 dark:border-orange-500/50 shadow-[0_8px_30px_rgba(249,115,22,0.1)] dark:shadow-[0_8px_30px_rgba(249,115,22,0.15)] hover:border-orange-500 dark:hover:border-orange-400' 
+                      : 'border border-slate-200 dark:border-slate-800 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.2)] hover:border-rose-300 dark:hover:border-slate-600'}`}>
+                    
+                    {isHighRate && <div className="absolute -top-3 -right-3 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-[0_4px_15px_rgba(249,115,22,0.4)] animate-pulse border border-orange-300/50 z-20">⚠️ 優先消滅 (>{(0.025*100).toFixed(1)}%)</div>}
+                    
+                    <div className="flex justify-between items-start mb-5 relative z-10">
+                      <div>
+                        <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-1 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">{item.name}</h2>
+                        <div className="text-slate-500 dark:text-slate-400 text-sm font-medium">{item.partnerBank || '無'} → {item.deductBank || '無'} 扣繳</div>
+                      </div>
+                      <button onClick={(e) => handleDelete(item.id, e)} className="text-slate-400 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-full transition-all">🗑️</button>
+                    </div>
+                    
+                    <div className="space-y-4 mt-6 relative z-10">
+                      <div className="flex justify-between items-end border-b border-slate-100 dark:border-slate-800 pb-3">
+                        <span className="text-slate-500 dark:text-slate-400 text-sm font-bold">每月需繳</span>
+                        <span className="text-3xl font-black text-rose-600 dark:text-rose-400 drop-shadow-sm">$ {Number(item.monthlyPay).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg">
+                        <span className="text-slate-600 dark:text-slate-400 font-bold">當前利率</span>
+                        <span className={`font-black text-base px-2 py-0.5 rounded ${isHighRate ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400' : 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'}`}>{(rateNum * 100).toFixed(2)} %</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm p-2">
+                        <span className="text-slate-600 dark:text-slate-400 font-bold">剩餘期數</span>
+                        <span className="font-black text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">{calcRemainingMonths(item.endDate)}</span>
+                      </div>
+                      {item.note && <div className="text-xs text-indigo-700 dark:text-indigo-300 mt-3 bg-indigo-50 dark:bg-indigo-900/30 p-3 rounded-lg border border-indigo-200 dark:border-indigo-800/50 shadow-inner font-medium">📝 {item.note}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Modal 省略防雷區：輸入框加入 dark class 切換機制 */}
+          {showModal && (
+            <div className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-all">
+              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white dark:border-slate-700 rounded-3xl w-full max-w-2xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto transform transition-all text-slate-900 dark:text-slate-100">
+                <h2 className="text-2xl font-black mb-6 border-b border-slate-200 dark:border-slate-700 pb-4 flex justify-between items-center">
+                  <span>{formData.id ? '✏️ 重新校正資料' : '➕ 部署新債務'}</span>
+                  <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className={`text-sm font-black p-2 rounded-xl outline-none border transition-colors ${formData.status === '還款中' ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                    <option value="還款中">🟢 執行還款</option>
+                    <option value="已結清">⚫ 封存結清</option>
+                  </select>
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">項目名稱</label>
+                    <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" placeholder="例：富邦車貸" />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">配合銀行</label>
+                    <input type="text" value={formData.partnerBank} onChange={e => setFormData({...formData, partnerBank: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">扣繳銀行</label>
+                    <input type="text" value={formData.deductBank} onChange={e => setFormData({...formData, deductBank: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" />
+                  </div>
+                  <div className="bg-rose-50/50 dark:bg-rose-950/30 p-3 rounded-xl border border-rose-100 dark:border-rose-900/50">
+                    <label className="block text-rose-600 dark:text-rose-400 text-xs font-black uppercase tracking-widest mb-1.5">每月還款 (NT$)</label>
+                    <input type="number" value={formData.monthlyPay} onChange={e => setFormData({...formData, monthlyPay: e.target.value})} className="w-full bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 rounded-lg p-3 text-rose-600 dark:text-rose-400 font-black text-lg focus:ring-2 focus:ring-rose-500 focus:outline-none shadow-sm dark:shadow-none" />
+                  </div>
+                  <div className="p-3">
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">利率 (例 0.022)</label>
+                    <input type="number" step="0.0001" value={formData.rate} onChange={e => setFormData({...formData, rate: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">總金額</label>
+                    <input type="number" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-400 text-xs font-black uppercase tracking-widest mb-1.5">結束年月</label>
+                    <input type="month" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all shadow-inner dark:shadow-none" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-indigo-600 dark:text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">備註</label>
+                    <input type="text" value={formData.note} onChange={e => setFormData({...formData, note: e.target.value})} className="w-full bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-3 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all" />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-4 mt-10">
+                  <button onClick={() => setShowModal(false)} className="px-6 py-3 rounded-xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-300 dark:border-transparent">捨棄變更</button>
+                  <button onClick={handleSave} disabled={isSaving} className="px-8 py-3 rounded-xl font-black bg-gradient-to-r from-rose-600 to-orange-500 text-white shadow-[0_4px_15px_rgba(225,29,72,0.3)] hover:shadow-[0_6px_20px_rgba(225,29,72,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50 border border-rose-400/50">
+                    {isSaving ? '數據寫入中...' : '確認寫入矩陣'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
