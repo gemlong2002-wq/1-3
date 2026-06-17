@@ -28,6 +28,7 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
+    // 🔒 刻錄已部署之 GAS RESTful API 端點
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbxId9k57O95C-atxe4orpwEWeXCylKsqPl76rNLD3WZhXdspHSHArAhIH9__LEV6UgJ/exec';
 
     const App = () => {
@@ -52,11 +53,13 @@
         id: '', name: '', partnerBank: '', deductBank: '', rate: '', fee: '', totalAmount: '', monthlyPay: '', endDate: '', status: '還款中', note: ''
       });
 
+      // 📥 數據抓取 (GET)
       const fetchData = () => {
         setIsLoading(true);
         setDebugLog('📡 正在請求 API 矩陣數據...');
         
-        fetch(GAS_URL)
+        // 🚨 物理防禦：強制跟隨 302 重新導向
+        fetch(GAS_URL, { redirect: 'follow' })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP 拒絕連線 (${res.status})`);
             return res.json();
@@ -93,14 +96,17 @@
         return diff > 0 ? diff : 0;
       };
 
+      // 📤 寫入數據 (POST)
       const handleSave = () => {
         if (!formData.name || !formData.monthlyPay) return alert('項目名稱與每月還款為必填！');
         setIsSaving(true);
         setDebugLog('📤 正在發送 POST 變更封包...');
 
+        // 🚨 物理防禦：強制跟隨 302 重新導向
         fetch(GAS_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          redirect: 'follow', 
           body: JSON.stringify({ action: 'save', data: formData })
         })
         .then(res => res.json())
@@ -114,26 +120,36 @@
         })
         .catch(err => {
           alert(`寫入失敗：${err.message}`);
+          setDebugLog(`❌ 寫入中止：${err.message}`);
           setIsSaving(false);
         });
       };
 
+      // 🗑️ 刪除數據 (POST)
       const handleDelete = (id, e) => {
         e.stopPropagation();
         if (!confirm('確定要執行實體刪除嗎？')) return;
         setIsLoading(true);
+        setDebugLog(`🗑️ 正在發送刪除命令 (ID: ${id})...`);
+
+        // 🚨 物理防禦：強制跟隨 302 重新導向
         fetch(GAS_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          redirect: 'follow',
           body: JSON.stringify({ action: 'delete', data: { id: id } })
         })
         .then(res => res.json())
         .then(resData => {
-          if (resData.status === 'success') fetchData();
+          if (resData.status === 'success') {
+            setDebugLog('✅ 刪除完成');
+            fetchData();
+          }
           else throw new Error(resData.message);
         })
         .catch(err => {
           alert(`刪除失敗：${err.message}`);
+          setDebugLog(`❌ 刪除中止：${err.message}`);
           setIsLoading(false);
         });
       };
@@ -297,7 +313,7 @@
                     <input type="number" value={formData.totalAmount} onChange={e => setFormData({...formData, totalAmount: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold" />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs font-black uppercase mb-1.5">結束年月</label>
+                    <label className="block text-slate-500 text-xs font-black uppercase mb-1.5">結束年月 (YYYY-MM)</label>
                     <input type="month" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold" />
                   </div>
                   <div className="md:col-span-2">
