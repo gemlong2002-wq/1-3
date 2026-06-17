@@ -10,9 +10,9 @@
       darkMode: 'class',
     }
   </script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.4/babel.min.js"></script>
   <style>
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; transition: background-color 0.3s ease, color 0.3s ease; }
     .bg-mesh-light { background-image: radial-gradient(at 0% 0%, hsla(350,100%,94%,1) 0, transparent 50%), radial-gradient(at 100% 100%, hsla(28,100%,94%,1) 0, transparent 50%); }
@@ -25,7 +25,7 @@
 <body class="bg-slate-50 dark:bg-[#020617] bg-mesh-light dark:bg-mesh-dark min-h-screen text-slate-900 dark:text-slate-100 transition-colors duration-300">
   <div id="root"></div>
 
-  <script type="text/babel" data-type="module">
+  <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbxId9k57O95C-atxe4orpwEWeXCylKsqPl76rNLD3WZhXdspHSHArAhIH9__LEV6UgJ/exec';
@@ -212,7 +212,7 @@
                       <span className="text-slate-600 dark:text-slate-400 font-bold">初始總額</span>
                       <span className="font-black text-slate-800 dark:text-slate-200">$ {Number(item.totalAmount || 0).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between items-center text-sm p-2 bg-rose-50 dark:bg-rose-955/20 rounded-lg border border-rose-100 dark:border-rose-900/50 text-rose-600 dark:text-rose-400">
+                    <div className="flex justify-between items-center text-sm p-2 bg-rose-50 dark:bg-rose-950/20 rounded-lg border border-rose-100 dark:border-rose-900/50 text-rose-600 dark:text-rose-400">
                       <span className="font-bold">剩餘應繳 (估值)</span>
                       <span className="font-black">$ {remainAmount.toLocaleString()}</span>
                     </div>
