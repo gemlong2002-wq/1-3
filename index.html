@@ -217,7 +217,7 @@
 
                 return (
                   <div key={item.id} onClick={() => openModal(item)} className={`relative p-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-2xl cursor-pointer group transition-all duration-300 hover:-translate-y-1.5 border ${isHighRate ? 'border-orange-400 shadow-md shadow-orange-500/5' : 'border-slate-200 dark:border-slate-800 shadow-sm'}`}>
-                    {isHighRate && <div className="absolute -top-3 -right-3 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-4 py-1.5 rounded-full z-20">⚠️ 優先消滅 (>{(0.025*100).toFixed(1)}%)</div>}
+                    {isHighRate && <div className="absolute -top-3 -right-3 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-4 py-1.5 rounded-full z-20">⚠️ 優先消滅 (&gt;{(0.025*100).toFixed(1)}%)
                     <div className="flex justify-between items-start mb-5">
                       <div>
                         <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-1 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">{item.name}</h2>
